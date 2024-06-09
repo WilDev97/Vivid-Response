@@ -1,31 +1,31 @@
 import os, re, requests, anthropic
-from IPython import display
+from IPython.display import display, Image
 from base64 import b64decode
 
+# Define API keys
 STABILITY_API_KEY = "sk-39zhSls9WskEQ7OSffJDjmpzdVe8RVZgYc0H4J439q76LRNa"
 
 ANTHROPIC_API_KEY = "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"
 
 MODEL_NAME = "claude-3-opus-20240229"
 
+# Initialize the Anthropic client
 CLIENT = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-def gen_image(prompt, height = 1024, width = 1024, num_samples = 1):
+def gen_image(prompt, height=1024, width=1024, num_samples=1):
     engine_id = "stable-diffusion-v1-6"
     api_host = "https://api.stability.ai"
 
     response = requests.post(
         f"{api_host}/v1/generation/{engine_id}/text-to-image",
-        headers = {
+        headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization":f"Bearer {STABILITY_API_KEY}"
+            "Authorization": f"Bearer {STABILITY_API_KEY}"
         },
-        json = {
+        json={
             "text_prompts": [
-                {
-                    "text": prompt,
-                }
+                {"text": prompt}
             ],
             "cfg_scale": 7,
             "height": height,
@@ -36,17 +36,29 @@ def gen_image(prompt, height = 1024, width = 1024, num_samples = 1):
     )
 
     if response.status_code != 200:
-        raise Exception("Not a 200 Response!") + str(response.text)
+        raise Exception(f"Error: {response.status_code} - {response.text}")
 
     data = response.json()
-    print("Image generation response data:", data)  # Debug print
     return data["artifacts"][0]["base64"]
 
 # Helper function to display images in a notebook
-def show_image(b64):
-    return display.Image(b64decode(b64))
+'''def show_image(b64):
+    try:
+        decoded_image = b64decode(b64)
+        display(Image(data=decoded_image))
+    except Exception as e:
+        print(f"Failed to display image: {e}")'''
 
-# Prompt
+def save_and_show_image(b64, filename = "generated_image.png"):
+    try:
+        decoded_image = b64decode(b64)
+        with open(filename, "wb") as f:
+            f.write(decoded_image)
+            img = Image(filename=filename)
+    except Exception as e:
+        print(f"failed: {e}")
+
+# Define the system prompt with guidelines
 image_gen_system_prompt = ("You are Jinzo, a helpful, honest, and harmless AI assistant. "
                            "One special thing about this conversation is that you have access to an image generation API, "
                            "so you may create images for the user if they request you do so, or if you have an idea "
@@ -121,18 +133,16 @@ image_gen_system_prompt += """
 # Helper finction to take Jinzo's responses when queried with this system prompt, extracts sthe image prompt, and creates an image
 def parse_response_and_gen_image(jinzo_response):
     if "<function_call>" in jinzo_response:
-        image_prompt = jinzo_response.split('<function_call>create_image(')[1].split(')</function_call>')[0].replace('"','')
-        base64 = gen_image(image_prompt)
-        print("hello function call is in response")
-
-    else: 
-        image_prompt, base64 = None, None
+        image_prompt = jinzo_response.split('<function_call>create_image(')[1].split(')</function_call>')[0].replace('"', '')
+        base64_image = gen_image(image_prompt)
+        print("Generated image prompt:", image_prompt)  # Debug print
+    else:
+        image_prompt, base64_image = None, None
 
     function_free_jinzo_response = re.sub(r'<function_call>.*</function_call>', '', jinzo_response)
-    # Return the image prompt as well
-    return (function_free_jinzo_response, image_prompt, base64)
+    return function_free_jinzo_response, image_prompt, base64_image
 
-def illistrator_jinzo(prompt):
+def illustrator_jinzo(prompt):
     jinzo_response = CLIENT.messages.create(
         system = image_gen_system_prompt,
         model = MODEL_NAME,
@@ -143,13 +153,13 @@ def illistrator_jinzo(prompt):
     ).content[0].text
     return parse_response_and_gen_image(jinzo_response)
 
-
-function_free_response_tennis, image_prompt_tennis, b64_tennis = illistrator_jinzo("How and when was tennis invented?")
+# Test the function
+function_free_response_tennis, image_prompt_tennis, b64_tennis = illustrator_jinzo("How and when was tennis invented?")
 
 print("Function-free response:", function_free_response_tennis)
 print("Image prompt:", image_prompt_tennis)
 if b64_tennis:
-    show_image(b64_tennis)
-    print("hello show image")
+    print("Base64 Image String Length:", len(b64_tennis))  # Debug print
+    save_and_show_image(b64_tennis, "tennis_invented.png")
 else:
     print("No image generated.")
